@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
-import 'waiter/waiter_login/waiter_Login_screen.dart';
+import 'screens/loginscreen.dart';
 
 void main() {
-  runApp(const MainApp());
+  runApp(const ToastWaiter());
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class ToastWaiter extends StatelessWidget {
+  const ToastWaiter({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: WaiterLoginScreen(),
+      title: 'Toast Waiter',
+
+      theme: ThemeData(primarySwatch: Colors.blue),
+
+      home: const LoginScreen(),
     );
   }
 }
