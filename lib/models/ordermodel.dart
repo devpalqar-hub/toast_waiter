@@ -1,92 +1,138 @@
-// Session = active order for a table
-// A session has multiple batches, each batch has items
-class OrderModel {
-  final String id; // sessionId
-  final String reference;
-  final String tableId;
-  final String createdAt;
-  final double total;
-  final int seats;
+// ── Session (list card) ───────────────────────────────────────────────────────
+class SessionModel {
+  final String id;
+  final String sessionNumber;
   final String status;
-  final List<OrderItem> items; // flattened from all batches
+  final String tableId;
+  final String tableName;
+  final String createdAt;
+  final double totalAmount;
+  final int batchCount;
+  final int guestCount;
+
+  SessionModel({
+    required this.id,
+    required this.sessionNumber,
+    required this.status,
+    required this.tableId,
+    required this.tableName,
+    required this.createdAt,
+    required this.totalAmount,
+    required this.batchCount,
+    required this.guestCount,
+  });
+
+  factory SessionModel.fromJson(Map<String, dynamic> j) {
+    final table = j['table'] is Map ? j['table'] as Map : {};
+    return SessionModel(
+      id: (j['id'] ?? '').toString(),
+      sessionNumber: (j['sessionNumber'] ?? '').toString(),
+      status: (j['status'] ?? 'OPEN').toString().toUpperCase(),
+      tableId: (j['tableId'] ?? table['id'] ?? '').toString(),
+      tableName: (table['name'] ?? '').toString(),
+      createdAt: (j['createdAt'] ?? '').toString(),
+      totalAmount: double.tryParse((j['totalAmount'] ?? 0).toString()) ?? 0,
+      batchCount: int.tryParse(
+              ((j['_count'] is Map ? j['_count']['batches'] : null) ?? 0)
+                  .toString()) ??
+          0,
+      guestCount: int.tryParse((j['guestCount'] ?? 1).toString()) ?? 1,
+    );
+  }
+
+  bool get isOpen => status == 'OPEN';
+  bool get isBilled => status == 'BILLED';
+}
+
+// ── Full Session Detail ────────────────────────────────────────────────────────
+class OrderModel {
+  final String id;
+  final String sessionNumber;
+  final String status;
+  final String tableId;
+  final String tableName;
+  final String createdAt;
+  final double totalAmount;
+  final double subtotal;
+  final double taxAmount;
+  final int guestCount;
+  final String? customerName;
+  final List<BatchModel> batches;
 
   OrderModel({
     required this.id,
-    required this.reference,
-    required this.tableId,
-    required this.createdAt,
-    required this.total,
-    required this.seats,
+    required this.sessionNumber,
     required this.status,
-    required this.items,
+    required this.tableId,
+    required this.tableName,
+    required this.createdAt,
+    required this.totalAmount,
+    required this.subtotal,
+    required this.taxAmount,
+    required this.guestCount,
+    this.customerName,
+    required this.batches,
   });
 
+  // All items flattened across batches
+  List<OrderItem> get items => batches.expand((b) => b.items).toList();
+
   factory OrderModel.fromJson(Map<String, dynamic> j) {
-    final id = (j['id'] ?? j['sessionId'] ?? '').toString();
-
-    // Flatten items from batches
-    final List<OrderItem> items = [];
-    final batches = j['batches'] ?? j['orderBatches'] ?? [];
-    if (batches is List) {
-      for (final batch in batches) {
-        if (batch is! Map) continue;
-        final batchId = (batch['id'] ?? '').toString();
-        final batchItems = batch['items'] ?? batch['orderItems'] ?? [];
-        if (batchItems is List) {
-          for (final item in batchItems) {
-            if (item is Map<String, dynamic>) {
-              items.add(OrderItem.fromJson(item, batchId: batchId));
-            }
-          }
-        }
-      }
-    }
-
-    // Also try direct items array (some APIs flatten it)
-    final directItems = j['items'] ?? [];
-    if (directItems is List && items.isEmpty) {
-      for (final item in directItems) {
-        if (item is Map<String, dynamic>) {
-          items.add(OrderItem.fromJson(item));
-        }
-      }
-    }
-
-    // Total from bill or direct
-    double total = 0;
-    final bill = j['bill'] ?? j['currentBill'] ?? {};
-    if (bill is Map) {
-      total = double.tryParse(
-              (bill['total'] ?? bill['totalAmount'] ?? 0).toString()) ??
-          0;
-    }
-    if (total == 0) {
-      total =
-          double.tryParse((j['total'] ?? j['totalAmount'] ?? 0).toString()) ??
-              0;
-    }
-
-    final tableId = (j['tableId'] ?? j['table']?['id'] ?? '').toString();
-    final ref = j['sessionNumber']?.toString() ??
-        j['orderNumber']?.toString() ??
-        '#ORD-${id.length >= 6 ? id.substring(0, 6).toUpperCase() : id}';
-
+    final table = j['table'] is Map ? j['table'] as Map : {};
+    final batchList = j['batches'] is List ? j['batches'] as List : [];
     return OrderModel(
-      id: id,
-      reference: ref,
-      tableId: tableId,
-      createdAt:
-          (j['createdAt'] ?? j['openedAt'] ?? j['startedAt'] ?? '').toString(),
-      total: total,
-      seats: int.tryParse(
-              (j['guestCount'] ?? j['seats'] ?? j['covers'] ?? 1).toString()) ??
-          1,
-      status: (j['status'] ?? 'OPEN').toString(),
-      items: items,
+      id: (j['id'] ?? '').toString(),
+      sessionNumber: (j['sessionNumber'] ?? '').toString(),
+      status: (j['status'] ?? 'OPEN').toString().toUpperCase(),
+      tableId: (j['tableId'] ?? table['id'] ?? '').toString(),
+      tableName: (table['name'] ?? '').toString(),
+      createdAt: (j['createdAt'] ?? '').toString(),
+      totalAmount: double.tryParse((j['totalAmount'] ?? 0).toString()) ?? 0,
+      subtotal: double.tryParse((j['subtotal'] ?? 0).toString()) ?? 0,
+      taxAmount: double.tryParse((j['taxAmount'] ?? 0).toString()) ?? 0,
+      guestCount: int.tryParse((j['guestCount'] ?? 1).toString()) ?? 1,
+      customerName: j['customerName']?.toString(),
+      batches: batchList
+          .whereType<Map<String, dynamic>>()
+          .map(BatchModel.fromJson)
+          .toList(),
     );
   }
 }
 
+// ── Batch ──────────────────────────────────────────────────────────────────────
+class BatchModel {
+  final String id;
+  final String batchNumber;
+  final String status;
+  final String createdAt;
+  final List<OrderItem> items;
+
+  BatchModel({
+    required this.id,
+    required this.batchNumber,
+    required this.status,
+    required this.createdAt,
+    required this.items,
+  });
+
+  factory BatchModel.fromJson(Map<String, dynamic> j) {
+    final itemList = j['items'] is List ? j['items'] as List : [];
+    return BatchModel(
+      id: (j['id'] ?? '').toString(),
+      batchNumber: (j['batchNumber'] ?? '').toString(),
+      status: (j['status'] ?? 'PENDING').toString().toUpperCase(),
+      createdAt: (j['createdAt'] ?? '').toString(),
+      items: itemList
+          .whereType<Map<String, dynamic>>()
+          .map(
+              (i) => OrderItem.fromJson(i, batchId: (j['id'] ?? '').toString()))
+          .toList(),
+    );
+  }
+}
+
+// ── Order Item ─────────────────────────────────────────────────────────────────
 class OrderItem {
   final String id;
   final String batchId;
@@ -94,6 +140,8 @@ class OrderItem {
   final String status;
   final String notes;
   final int quantity;
+  final double unitPrice;
+  final String? imageUrl;
 
   OrderItem({
     required this.id,
@@ -102,24 +150,22 @@ class OrderItem {
     required this.status,
     required this.notes,
     required this.quantity,
+    required this.unitPrice,
+    this.imageUrl,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> j, {String batchId = ''}) {
-    // Name from item or nested menuItem
-    final name = (j['name'] ??
-            j['itemName'] ??
-            j['menuItem']?['name'] ??
-            j['menuItemName'] ??
-            'Item')
-        .toString();
-
+    final menuItem = j['menuItem'] is Map ? j['menuItem'] as Map : {};
+    final name = (j['name'] ?? menuItem['name'] ?? 'Item').toString();
     return OrderItem(
       id: (j['id'] ?? '').toString(),
-      batchId: batchId,
+      batchId: batchId.isNotEmpty ? batchId : (j['batchId'] ?? '').toString(),
       name: name,
-      status: (j['status'] ?? 'PLACED').toString().toUpperCase(),
-      notes: (j['notes'] ?? j['specialInstructions'] ?? '').toString(),
-      quantity: int.tryParse((j['quantity'] ?? j['qty'] ?? 1).toString()) ?? 1,
+      status: (j['status'] ?? 'PENDING').toString().toUpperCase(),
+      notes: (j['notes'] ?? '').toString(),
+      quantity: int.tryParse((j['quantity'] ?? 1).toString()) ?? 1,
+      unitPrice: double.tryParse((j['unitPrice'] ?? 0).toString()) ?? 0,
+      imageUrl: (menuItem['imageUrl'] ?? j['imageUrl'])?.toString(),
     );
   }
 }

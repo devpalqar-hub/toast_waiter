@@ -23,6 +23,7 @@ class C {
   static String itemStatus(String rId, String sId, String bId, String iId) =>
       '$_orders/restaurants/$rId/sessions/$sId/batches/$bId/items/$iId/status';
 
-  // Menu
-  static String menu(String rId) => '$_base/restaurants/$rId/menu';
+  // Menu — confirmed endpoint from Swagger: /menu-items with fetchAll
+  static String menu(String rId) =>
+      '$_base/restaurants/$rId/menu-items?fetchAll=true';
 }

@@ -11,11 +11,10 @@ class ApiResponse<T> {
   final T? data;
   final String? error;
   final bool ok;
-  final String log;
-  ApiResponse.success(this.data, {this.log = ''})
+  ApiResponse.success(this.data)
       : ok = true,
         error = null;
-  ApiResponse.failure(this.error, {this.log = ''})
+  ApiResponse.failure(this.error)
       : ok = false,
         data = null;
 }
@@ -24,8 +23,6 @@ class ApiService {
   static String? _token;
   static String? _restaurantId;
   static const _timeout = Duration(seconds: 15);
-
-  // ── Session ──────────────────────────────────────────────────────────────
 
   static Future<String?> getToken() async {
     if (_token != null) return _token;
@@ -56,8 +53,6 @@ class ApiService {
     await p.remove(C.restaurantKey);
   }
 
-  // ── Headers ──────────────────────────────────────────────────────────────
-
   static const Map<String, String> _pub = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -70,8 +65,6 @@ class ApiService {
     return h;
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
   static dynamic _json(http.Response r) {
     try {
       return jsonDecode(r.body);
@@ -83,7 +76,7 @@ class ApiService {
   static List<dynamic> _list(dynamic d) {
     if (d is List) return d;
     if (d is Map) {
-      for (final k in ['data', 'items', 'results', 'sessions', 'records']) {
+      for (final k in ['data', 'items', 'sessions', 'results', 'records']) {
         if (d[k] is List) return d[k] as List<dynamic>;
       }
     }
@@ -94,7 +87,6 @@ class ApiService {
 
   // ════════════════════════════════════════════════════════════════════════
   // AUTH
-  // Response: { "data": { "accessToken": "...", "user": { "restaurantId": "..." } } }
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<ApiResponse<String>> sendOtp(String email) async {
@@ -143,14 +135,11 @@ class ApiService {
               (restRaw is Map ? (restRaw as Map)['id'] : null))
           ?.toString();
 
-      debugPrint('token=${token != null} rId=$rId');
-
       if (token != null && token.isNotEmpty && rId != null && rId.isNotEmpty) {
         await _saveSession(token, rId);
         return ApiResponse.success('ok');
       }
-      return ApiResponse.failure(
-          'Missing token or restaurant ID. Keys: ${data.keys.toList()}');
+      return ApiResponse.failure('Missing token or restaurant ID');
     } catch (e) {
       return ApiResponse.failure('Error: $e');
     }
@@ -158,7 +147,6 @@ class ApiService {
 
   // ════════════════════════════════════════════════════════════════════════
   // TABLES
-  // GET /api/v1/restaurants/{rId}/tables?fetchAll=true
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<ApiResponse<List<TableModel>>> getTables() async {
@@ -168,7 +156,6 @@ class ApiService {
       final r = await http
           .get(Uri.parse(C.tables(rId)), headers: await _auth())
           .timeout(_timeout);
-      debugPrint('getTables ${r.statusCode}');
       if (r.statusCode == 401)
         return ApiResponse.failure('Session expired. Please log in again.');
       if (_ok(r.statusCode)) {
@@ -185,89 +172,122 @@ class ApiService {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // SESSIONS (ORDERS)
-  // GET /api/v1/orders/restaurants/{rId}/sessions
-  // GET /api/v1/orders/restaurants/{rId}/sessions/{sessionId}
+  // SESSIONS
+  // GET /api/v1/orders/restaurants/{rId}/sessions?tableId=x
   // ════════════════════════════════════════════════════════════════════════
 
-  // Get active session for a specific table
-  static Future<ApiResponse<OrderModel>> getOrder(String tableId) async {
+  static Future<ApiResponse<List<SessionModel>>> getSessions(
+      String tableId) async {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
-
-    final h = await _auth();
-
     try {
-      // List all sessions and filter by tableId
-      final url = '${C.sessions(rId)}?tableId=$tableId&status=OPEN';
-      debugPrint('getOrder: $url');
-      final r = await http.get(Uri.parse(url), headers: h).timeout(_timeout);
-      debugPrint('getOrder status: ${r.statusCode}');
-      debugPrint(
-          'getOrder body: ${r.body.substring(0, r.body.length.clamp(0, 500))}');
-
+      final url = '${C.sessions(rId)}?tableId=$tableId&limit=50';
+      debugPrint('getSessions: $url');
+      final r = await http
+          .get(Uri.parse(url), headers: await _auth())
+          .timeout(_timeout);
+      debugPrint('getSessions ${r.statusCode}');
       if (r.statusCode == 401)
         return ApiResponse.failure('Session expired. Please log in again.');
-
       if (_ok(r.statusCode)) {
-        final list = _list(_json(r));
-        if (list.isNotEmpty) {
-          // Get full session details (includes batches and items)
-          final sessionId = (list.first as Map)['id']?.toString() ?? '';
-          if (sessionId.isNotEmpty) {
-            return await _getSessionDetail(rId, sessionId, h);
-          }
-        }
-        // Try without status filter
-        final r2 = await http
-            .get(Uri.parse(C.sessions(rId)), headers: h)
-            .timeout(_timeout);
-        final list2 = _list(_json(r2));
-        for (final s in list2) {
-          if (s is! Map) continue;
-          final tId = (s['tableId'] ?? s['table']?['id'] ?? '').toString();
-          final status = (s['status'] ?? '').toString().toUpperCase();
-          if (tId == tableId && (status == 'OPEN' || status == 'ACTIVE')) {
-            final sessionId = s['id']?.toString() ?? '';
-            if (sessionId.isNotEmpty)
-              return await _getSessionDetail(rId, sessionId, h);
-          }
-        }
-        return ApiResponse.success(null);
+        final sessions = _list(_json(r))
+            .whereType<Map<String, dynamic>>()
+            .map(SessionModel.fromJson)
+            .toList();
+        return ApiResponse.success(sessions);
       }
-      return ApiResponse.success(null);
-    } catch (e) {
-      debugPrint('getOrder error: $e');
+      return ApiResponse.failure('Failed to load sessions (${r.statusCode})');
+    } catch (_) {
       return ApiResponse.failure('Network error.');
     }
   }
 
-  // Get full session detail with all batches and items
-  static Future<ApiResponse<OrderModel>> _getSessionDetail(
-      String rId, String sessionId, Map<String, String> h) async {
+  // GET /api/v1/orders/restaurants/{rId}/sessions/{sessionId}
+  static Future<ApiResponse<OrderModel>> getSessionDetail(
+      String sessionId) async {
+    final rId = await getRestaurantId();
+    if (rId == null) return ApiResponse.failure('Not logged in.');
     try {
       final url = C.session(rId, sessionId);
       debugPrint('getSessionDetail: $url');
-      final r = await http.get(Uri.parse(url), headers: h).timeout(_timeout);
-      debugPrint('getSessionDetail status: ${r.statusCode}');
+      final r = await http
+          .get(Uri.parse(url), headers: await _auth())
+          .timeout(_timeout);
       debugPrint(
-          'getSessionDetail body: ${r.body.substring(0, r.body.length.clamp(0, 800))}');
-
+          'getSessionDetail ${r.statusCode}: ${r.body.substring(0, r.body.length.clamp(0, 200))}');
+      if (r.statusCode == 401)
+        return ApiResponse.failure('Session expired. Please log in again.');
       if (_ok(r.statusCode)) {
         final body = _json(r);
-        Map<String, dynamic>? data;
-        if (body is Map<String, dynamic>) {
-          data = body['data'] is Map<String, dynamic>
-              ? body['data'] as Map<String, dynamic>
-              : body;
-        }
-        if (data != null) {
-          return ApiResponse.success(OrderModel.fromJson(data));
-        }
+        final data = body is Map && body['data'] is Map<String, dynamic>
+            ? body['data'] as Map<String, dynamic>
+            : (body is Map<String, dynamic> ? body : null);
+        if (data != null) return ApiResponse.success(OrderModel.fromJson(data));
       }
-      return ApiResponse.success(null);
+      return ApiResponse.failure('Failed to load order (${r.statusCode})');
     } catch (e) {
       return ApiResponse.failure('Error: $e');
+    }
+  }
+
+  // POST /api/v1/orders/restaurants/{rId}/sessions
+  // Body: { tableId, guestCount, customerName, channel }
+  static Future<ApiResponse<SessionModel>> createSession({
+    required String tableId,
+    int guestCount = 1,
+    String? customerName,
+  }) async {
+    final rId = await getRestaurantId();
+    if (rId == null) return ApiResponse.failure('Not logged in.');
+    try {
+      final body = <String, dynamic>{
+        'tableId': tableId,
+        'guestCount': guestCount,
+        'channel': 'DINE_IN',
+        if (customerName != null && customerName.isNotEmpty)
+          'customerName': customerName,
+      };
+      final r = await http
+          .post(Uri.parse(C.sessions(rId)),
+              headers: await _auth(), body: jsonEncode(body))
+          .timeout(_timeout);
+      debugPrint('createSession ${r.statusCode}: ${r.body}');
+      if (_ok(r.statusCode)) {
+        final resp = _json(r);
+        final data = resp is Map && resp['data'] is Map<String, dynamic>
+            ? resp['data'] as Map<String, dynamic>
+            : null;
+        if (data != null)
+          return ApiResponse.success(SessionModel.fromJson(data));
+      }
+      final b = _json(r);
+      return ApiResponse.failure(
+          b is Map ? b['message']?.toString() ?? 'Failed' : 'Failed');
+    } catch (e) {
+      return ApiResponse.failure('Error: $e');
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ADD ITEMS TO SESSION (new batch)
+  // POST /api/v1/orders/restaurants/{rId}/sessions/{sessionId}/batches
+  // Body: { items: [{ menuItemId, quantity, notes }] }
+  // ════════════════════════════════════════════════════════════════════════
+
+  static Future<bool> addBatchToSession(
+      String sessionId, List<Map<String, dynamic>> items) async {
+    final rId = await getRestaurantId();
+    if (rId == null) return false;
+    try {
+      final body = {'items': items};
+      final r = await http
+          .post(Uri.parse(C.batches(rId, sessionId)),
+              headers: await _auth(), body: jsonEncode(body))
+          .timeout(_timeout);
+      debugPrint('addBatch ${r.statusCode}: ${r.body}');
+      return _ok(r.statusCode);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -277,14 +297,12 @@ class ApiService {
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<bool> updateItemStatus(
-      String sessionId, String itemId, String status,
-      {String batchId = ''}) async {
+      String sessionId, String batchId, String itemId, String status) async {
     final rId = await getRestaurantId();
     if (rId == null) return false;
     try {
-      final url = C.itemStatus(rId, sessionId, batchId, itemId);
       final r = await http
-          .patch(Uri.parse(url),
+          .patch(Uri.parse(C.itemStatus(rId, sessionId, batchId, itemId)),
               headers: await _auth(), body: jsonEncode({'status': status}))
           .timeout(_timeout);
       return _ok(r.statusCode);
@@ -294,61 +312,77 @@ class ApiService {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // ADD ITEMS TO SESSION (batch)
-  // POST /api/v1/orders/restaurants/{rId}/sessions/{sId}/batches
-  // ════════════════════════════════════════════════════════════════════════
-
-  static Future<bool> addToOrder(String sessionId, String menuItemId, int qty,
-      {String? notes}) async {
-    final rId = await getRestaurantId();
-    if (rId == null) return false;
-    try {
-      // Add as a new batch with one item
-      final body = {
-        'items': [
-          {
-            'menuItemId': menuItemId,
-            'quantity': qty,
-            if (notes != null && notes.isNotEmpty) 'notes': notes,
-          }
-        ]
-      };
-      final r = await http
-          .post(Uri.parse(C.batches(rId, sessionId)),
-              headers: await _auth(), body: jsonEncode(body))
-          .timeout(_timeout);
-      debugPrint('addToOrder ${r.statusCode}: ${r.body}');
-      return _ok(r.statusCode);
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // ════════════════════════════════════════════════════════════════════════
-  // MENU ITEMS
+  // MENU
   // GET /api/v1/restaurants/{rId}/menu
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<ApiResponse<List<MenuItem>>> getMenuItems() async {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
+
+    final h = await _auth();
+    final url =
+        'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu?fetchAll=true';
+
     try {
-      final r = await http
-          .get(Uri.parse(C.menu(rId)), headers: await _auth())
-          .timeout(_timeout);
-      debugPrint('getMenuItems ${r.statusCode}');
+      debugPrint('Loading menu: $url');
+      final r = await http.get(Uri.parse(url), headers: h).timeout(_timeout);
+      debugPrint('Menu status: ${r.statusCode}');
+      debugPrint(
+          'Menu body (first 600): ${r.body.substring(0, r.body.length.clamp(0, 600))}');
+
       if (r.statusCode == 401)
         return ApiResponse.failure('Session expired. Please log in again.');
+
       if (_ok(r.statusCode)) {
-        final items = _list(_json(r))
-            .whereType<Map<String, dynamic>>()
-            .map(MenuItem.fromJson)
-            .toList();
-        return ApiResponse.success(items);
+        final decoded = _json(r);
+
+        // The API wraps in { data: [...] }
+        List<dynamic> raw = [];
+        if (decoded is Map) {
+          final d = decoded['data'];
+          if (d is List) {
+            raw = d;
+          } else if (d is Map) {
+            // Sometimes nested: { data: { items: [...] } }
+            for (final k in ['items', 'menuItems', 'data', 'results']) {
+              if (d[k] is List) {
+                raw = d[k] as List;
+                break;
+              }
+            }
+          }
+          // Also try top-level list keys
+          if (raw.isEmpty) {
+            for (final k in ['items', 'menuItems', 'results', 'data']) {
+              if (decoded[k] is List) {
+                raw = decoded[k] as List;
+                break;
+              }
+            }
+          }
+        } else if (decoded is List) {
+          raw = decoded;
+        }
+
+        debugPrint('Menu items parsed: ${raw.length}');
+
+        if (raw.isNotEmpty) {
+          final items = raw
+              .whereType<Map<String, dynamic>>()
+              .map(MenuItem.fromJson)
+              .toList();
+          return ApiResponse.success(items);
+        }
+
+        // 200 but empty — log the full body for debugging
+        debugPrint('FULL MENU BODY: ${r.body}');
+        return ApiResponse.failure(
+            'Menu loaded but no items found. Body: ${r.body.substring(0, r.body.length.clamp(0, 200))}');
       }
       return ApiResponse.failure('Failed to load menu (${r.statusCode})');
-    } catch (_) {
-      return ApiResponse.failure('Network error.');
+    } catch (e) {
+      return ApiResponse.failure('Error: $e');
     }
   }
 }

@@ -4,7 +4,7 @@ import '../services/apiservice.dart';
 
 class AddItemsScreen extends StatefulWidget {
   final String tableName;
-  final String bookingId;
+  final String bookingId; // sessionId
 
   const AddItemsScreen({
     super.key,
@@ -50,66 +50,55 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
   }
 
   List<String> get _categories {
-    final cats = _menu.map((m) => m.category).toSet().toList();
-    cats.sort();
+    final cats = _menu.map((m) => m.category).toSet().toList()..sort();
     return ['All', ...cats];
   }
 
-  List<MenuItem> get _filtered {
-    return _menu.where((m) {
-      final matchCat = _category == 'All' || m.category == _category;
-      final matchSearch = _search.isEmpty ||
-          m.name.toLowerCase().contains(_search.toLowerCase()) ||
-          m.description.toLowerCase().contains(_search.toLowerCase());
-      return matchCat && matchSearch;
-    }).toList();
-  }
+  List<MenuItem> get _filtered => _menu.where((m) {
+        final matchCat = _category == 'All' || m.category == _category;
+        final matchSearch = _search.isEmpty ||
+            m.name.toLowerCase().contains(_search.toLowerCase()) ||
+            m.description.toLowerCase().contains(_search.toLowerCase());
+        return matchCat && matchSearch;
+      }).toList();
 
   int get _cartCount => _cart.values.fold(0, (s, c) => s + c.quantity);
   double get _cartTotal => _cart.values.fold(0.0, (s, c) => s + c.subtotal);
 
-  void _add(MenuItem item) {
-    setState(() {
-      if (_cart.containsKey(item.id)) {
-        _cart[item.id]!.quantity++;
-      } else {
-        _cart[item.id] = CartItem(item);
-      }
-    });
-  }
+  void _add(MenuItem item) => setState(() {
+        if (_cart.containsKey(item.id))
+          _cart[item.id]!.quantity++;
+        else
+          _cart[item.id] = CartItem(item);
+      });
 
-  void _remove(MenuItem item) {
-    setState(() {
-      if (_cart.containsKey(item.id)) {
-        if (_cart[item.id]!.quantity > 1) {
+  void _remove(MenuItem item) => setState(() {
+        if (!_cart.containsKey(item.id)) return;
+        if (_cart[item.id]!.quantity > 1)
           _cart[item.id]!.quantity--;
-        } else {
+        else
           _cart.remove(item.id);
-        }
-      }
-    });
-  }
+      });
 
   Future<void> _sendToKitchen() async {
     if (_cart.isEmpty) return;
     setState(() => _sending = true);
-    bool allOk = true;
-    for (final entry in _cart.entries) {
-      final ok = await ApiService.addToOrder(
-          widget.bookingId, entry.key, entry.value.quantity);
-      if (!ok) allOk = false;
-    }
+    final items = _cart.entries
+        .map((e) => <String, dynamic>{
+              'menuItemId': e.key,
+              'quantity': e.value.quantity,
+            })
+        .toList();
+    final ok = await ApiService.addBatchToSession(widget.bookingId, items);
     setState(() => _sending = false);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content:
-          Text(allOk ? 'Sent to kitchen!' : 'Some items failed. Try again.'),
-      backgroundColor:
-          allOk ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+      content: Text(ok ? 'Sent to kitchen! 🍳' : 'Failed. Try again.'),
+      backgroundColor: ok ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
-    if (allOk) Navigator.pop(context);
+    if (ok) Navigator.pop(context);
   }
 
   @override
@@ -128,38 +117,38 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
   }
 
   Widget _buildHeader() => Container(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         decoration: const BoxDecoration(
             color: Colors.white,
             border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB)))),
         child: Row(children: [
           GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.arrow_back_ios_new_rounded,
-                    size: 15, color: _dark)),
-          ),
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(Icons.arrow_back_ios_new_rounded,
+                      size: 15, color: _dark))),
           const SizedBox(width: 12),
           Expanded(
               child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Table ${widget.tableName}',
-                  style: const TextStyle(
-                      fontSize: 17, fontWeight: FontWeight.w800, color: _dark)),
-              const Text('NEW BATCH',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _blue,
-                      letterSpacing: 0.5)),
-            ],
-          )),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Table ${widget.tableName}',
+                    style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: _dark)),
+                const Text('NEW BATCH',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _blue,
+                        letterSpacing: 0.5)),
+              ])),
           const Icon(Icons.more_vert_rounded, color: _dark),
         ]),
       );
@@ -189,7 +178,7 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
 
   Widget _buildCategoryTabs() => SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
         child: Row(
             children: _categories.map((cat) {
           final on = _category == cat;
@@ -214,10 +203,9 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
       );
 
   Widget _buildBody() {
-    if (_loading) {
+    if (_loading)
       return const Center(child: CircularProgressIndicator(color: _blue));
-    }
-    if (_error != null) {
+    if (_error != null)
       return Center(
           child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -234,12 +222,10 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
               child: const Text('Retry')),
         ],
       ));
-    }
-    if (_filtered.isEmpty) {
+    if (_filtered.isEmpty)
       return const Center(
           child: Text('No items found',
               style: TextStyle(color: _grey, fontSize: 15)));
-    }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       itemCount: _filtered.length,
@@ -260,9 +246,10 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
             BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6)
           ]),
       child: Row(children: [
+        // Item image
         Container(
-          width: 54,
-          height: 54,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
               color: const Color(0xFFF3F4F6)),
@@ -279,45 +266,49 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
                   color: Color(0xFF9CA3AF), size: 24),
         ),
         const SizedBox(width: 12),
+        // Name + description
         Expanded(
-            child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(item.name,
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(item.name,
+              style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w600, color: _dark)),
+          if (item.description.isNotEmpty)
+            Text(item.description,
+                style: const TextStyle(fontSize: 12, color: _grey),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          if (item.price > 0)
+            Text('\$${item.price.toStringAsFixed(2)}',
                 style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600, color: _dark)),
-            if (item.description.isNotEmpty)
-              Text(item.description,
-                  style: const TextStyle(fontSize: 12, color: _grey)),
-          ],
-        )),
+                    fontSize: 12, color: _blue, fontWeight: FontWeight.w600)),
+        ])),
         const SizedBox(width: 8),
+        // Qty controls
         if (inCart == null)
           GestureDetector(
-            onTap: () => _add(item),
-            child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                    color: _blue, borderRadius: BorderRadius.circular(8)),
-                child: const Icon(Icons.add_rounded,
-                    color: Colors.white, size: 18)),
-          )
+              onTap: () => _add(item),
+              child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                      color: _blue, borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.add_rounded,
+                      color: Colors.white, size: 20)))
         else
           Row(children: [
             GestureDetector(
-              onTap: () => _remove(item),
-              child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                      border: Border.all(color: _blue),
-                      borderRadius: BorderRadius.circular(8)),
-                  child:
-                      const Icon(Icons.remove_rounded, color: _blue, size: 16)),
-            ),
+                onTap: () => _remove(item),
+                child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                        border: Border.all(color: _blue),
+                        borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.remove_rounded,
+                        color: _blue, size: 16))),
             SizedBox(
-                width: 32,
+                width: 34,
                 child: Center(
                     child: Text('${inCart.quantity}',
                         style: const TextStyle(
@@ -325,15 +316,14 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
                             fontWeight: FontWeight.w800,
                             color: _dark)))),
             GestureDetector(
-              onTap: () => _add(item),
-              child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                      color: _blue, borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.add_rounded,
-                      color: Colors.white, size: 16)),
-            ),
+                onTap: () => _add(item),
+                child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                        color: _blue, borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.add_rounded,
+                        color: Colors.white, size: 16))),
           ]),
       ]),
     );
@@ -350,63 +340,61 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
             const SizedBox(width: 10),
             Expanded(
                 child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Current Batch',
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  const Text('Current Batch',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _dark)),
+                  Text(
+                      '$_cartCount item${_cartCount > 1 ? 's' : ''}  •  total \$${_cartTotal.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 12, color: _grey)),
+                ])),
+            GestureDetector(
+                onTap: _showCartSheet,
+                child: const Text('View Details',
                     style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _dark)),
-                Text(
-                    '$_cartCount item${_cartCount > 1 ? 's' : ''}'
-                    '  •  total \$${_cartTotal.toStringAsFixed(2)}',
-                    style: const TextStyle(fontSize: 12, color: _grey)),
-              ],
-            )),
-            GestureDetector(
-              onTap: _showCartSheet,
-              child: const Text('View Details',
-                  style: TextStyle(
-                      fontSize: 13, color: _blue, fontWeight: FontWeight.w600)),
-            ),
+                        color: _blue,
+                        fontWeight: FontWeight.w600))),
           ]),
           const SizedBox(height: 12),
           GestureDetector(
-            onTap: _sending ? null : _sendToKitchen,
-            child: Container(
-              width: double.infinity,
-              height: 52,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                    colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)]),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                      color: _blue.withOpacity(0.3),
-                      blurRadius: 14,
-                      offset: const Offset(0, 5))
-                ],
-              ),
-              child: Center(
-                  child: _sending
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                              Text('Send to Kitchen',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15)),
-                              SizedBox(width: 8),
-                              Text('🍳', style: TextStyle(fontSize: 16)),
-                            ])),
-            ),
-          ),
+              onTap: _sending ? null : _sendToKitchen,
+              child: Container(
+                width: double.infinity,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)]),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                        color: _blue.withOpacity(0.3),
+                        blurRadius: 14,
+                        offset: const Offset(0, 5))
+                  ],
+                ),
+                child: Center(
+                    child: _sending
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2))
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                                Text('Send to Kitchen',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15)),
+                                SizedBox(width: 8),
+                                Text('🍳', style: TextStyle(fontSize: 16)),
+                              ])),
+              )),
         ]),
       );
 
@@ -419,76 +407,61 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
       builder: (_) => StatefulBuilder(
         builder: (ctx, setS) => Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2))),
-              const Text('Current Batch',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w800, color: _dark)),
-              const SizedBox(height: 16),
-              ..._cart.values.map((c) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Row(children: [
-                      Expanded(
-                          child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
+            const Text('Current Batch',
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w800, color: _dark)),
+            const SizedBox(height: 16),
+            ..._cart.values.map((c) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(children: [
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                           Text(c.item.name,
                               style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: _dark)),
                           Text(
-                              '\$${c.item.price.toStringAsFixed(2)}'
-                              ' × ${c.quantity}',
+                              '\$${c.item.price.toStringAsFixed(2)} × ${c.quantity}',
                               style:
                                   const TextStyle(fontSize: 12, color: _grey)),
-                        ],
-                      )),
-                      Text('\$${c.subtotal.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: _dark)),
-                      const SizedBox(width: 12),
-                      GestureDetector(
+                        ])),
+                    Text('\$${c.subtotal.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _dark)),
+                    const SizedBox(width: 12),
+                    GestureDetector(
                         onTap: () {
                           setState(() => _cart.remove(c.item.id));
                           setS(() {});
-                          if (_cart.isEmpty) {
-                            Navigator.pop(ctx);
-                          }
+                          if (_cart.isEmpty) Navigator.pop(ctx);
                         },
                         child: const Icon(Icons.close_rounded,
-                            size: 18, color: _grey),
-                      ),
-                    ]),
-                  )),
-              const Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Total',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                          color: _dark)),
-                  Text('\$${_cartTotal.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          color: _blue)),
-                ],
-              ),
-            ],
-          ),
+                            size: 18, color: _grey)),
+                  ]),
+                )),
+            const Divider(),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Total',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 15, color: _dark)),
+              Text('\$${_cartTotal.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 15, color: _blue)),
+            ]),
+          ]),
         ),
       ),
     );
