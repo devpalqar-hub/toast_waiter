@@ -1,4 +1,4 @@
-class C {
+class endPoint {
   static const _base = 'https://api.pos.palqar.cloud/api/v1';
   static const _orders = 'https://api.pos.palqar.cloud/api/v1/orders';
   static const tokenKey = 'auth_token';

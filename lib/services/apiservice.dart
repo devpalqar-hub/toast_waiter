@@ -26,14 +26,15 @@ class ApiService {
 
   static Future<String?> getToken() async {
     if (_token != null) return _token;
-    _token = (await SharedPreferences.getInstance()).getString(C.tokenKey);
+    _token =
+        (await SharedPreferences.getInstance()).getString(endPoint.tokenKey);
     return _token;
   }
 
   static Future<String?> getRestaurantId() async {
     if (_restaurantId != null) return _restaurantId;
-    _restaurantId =
-        (await SharedPreferences.getInstance()).getString(C.restaurantKey);
+    _restaurantId = (await SharedPreferences.getInstance())
+        .getString(endPoint.restaurantKey);
     return _restaurantId;
   }
 
@@ -41,16 +42,16 @@ class ApiService {
     _token = token;
     _restaurantId = rId;
     final p = await SharedPreferences.getInstance();
-    await p.setString(C.tokenKey, token);
-    await p.setString(C.restaurantKey, rId);
+    await p.setString(endPoint.tokenKey, token);
+    await p.setString(endPoint.restaurantKey, rId);
   }
 
   static Future<void> clearToken() async {
     _token = null;
     _restaurantId = null;
     final p = await SharedPreferences.getInstance();
-    await p.remove(C.tokenKey);
-    await p.remove(C.restaurantKey);
+    await p.remove(endPoint.tokenKey);
+    await p.remove(endPoint.restaurantKey);
   }
 
   static const Map<String, String> _pub = {
@@ -92,7 +93,7 @@ class ApiService {
   static Future<ApiResponse<String>> sendOtp(String email) async {
     try {
       final r = await http
-          .post(Uri.parse(C.sendOtp),
+          .post(Uri.parse(endPoint.sendOtp),
               headers: _pub, body: jsonEncode({'email': email}))
           .timeout(_timeout);
       if (_ok(r.statusCode)) return ApiResponse.success('OTP sent');
@@ -107,7 +108,7 @@ class ApiService {
   static Future<ApiResponse<String>> verifyOtp(String email, String otp) async {
     try {
       final r = await http
-          .post(Uri.parse(C.verifyOtp),
+          .post(Uri.parse(endPoint.verifyOtp),
               headers: _pub, body: jsonEncode({'email': email, 'otp': otp}))
           .timeout(_timeout);
 
@@ -154,7 +155,7 @@ class ApiService {
     if (rId == null) return ApiResponse.failure('Not logged in.');
     try {
       final r = await http
-          .get(Uri.parse(C.tables(rId)), headers: await _auth())
+          .get(Uri.parse(endPoint.tables(rId)), headers: await _auth())
           .timeout(_timeout);
       if (r.statusCode == 401)
         return ApiResponse.failure('Session expired. Please log in again.');
@@ -181,7 +182,8 @@ class ApiService {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
     try {
-      final url = '${C.sessions(rId)}?tableId=$tableId&limit=50';
+      final url =
+          '${endPoint.sessions(rId)}?tableId=$tableId&limit=50&status=OPEN';
       debugPrint('getSessions: $url');
       final r = await http
           .get(Uri.parse(url), headers: await _auth())
@@ -208,7 +210,7 @@ class ApiService {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
     try {
-      final url = C.session(rId, sessionId);
+      final url = endPoint.session(rId, sessionId);
       debugPrint('getSessionDetail: $url');
       final r = await http
           .get(Uri.parse(url), headers: await _auth())
@@ -248,7 +250,7 @@ class ApiService {
           'customerName': customerName,
       };
       final r = await http
-          .post(Uri.parse(C.sessions(rId)),
+          .post(Uri.parse(endPoint.sessions(rId)),
               headers: await _auth(), body: jsonEncode(body))
           .timeout(_timeout);
       debugPrint('createSession ${r.statusCode}: ${r.body}');
@@ -281,7 +283,7 @@ class ApiService {
     try {
       final body = {'items': items};
       final r = await http
-          .post(Uri.parse(C.batches(rId, sessionId)),
+          .post(Uri.parse(endPoint.batches(rId, sessionId)),
               headers: await _auth(), body: jsonEncode(body))
           .timeout(_timeout);
       debugPrint('addBatch ${r.statusCode}: ${r.body}');
@@ -302,8 +304,10 @@ class ApiService {
     if (rId == null) return false;
     try {
       final r = await http
-          .patch(Uri.parse(C.itemStatus(rId, sessionId, batchId, itemId)),
-              headers: await _auth(), body: jsonEncode({'status': status}))
+          .patch(
+              Uri.parse(endPoint.itemStatus(rId, sessionId, batchId, itemId)),
+              headers: await _auth(),
+              body: jsonEncode({'status': status}))
           .timeout(_timeout);
       return _ok(r.statusCode);
     } catch (_) {
