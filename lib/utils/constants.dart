@@ -1,8 +1,9 @@
-class endPoint {
+class C {
   static const _base = 'https://api.pos.palqar.cloud/api/v1';
   static const _orders = 'https://api.pos.palqar.cloud/api/v1/orders';
   static const tokenKey = 'auth_token';
   static const restaurantKey = 'restaurant_id';
+  static const restaurantNameKey = 'restaurant_name';
 
   // Auth
   static const sendOtp = '$_base/auth/send-otp';

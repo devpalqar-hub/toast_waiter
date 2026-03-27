@@ -1,6 +1,5 @@
 name: savorya_staff
-description: Savorya Staff - Restaurant Waiter App
-publish_to: 'none'
+description: Savorya Staff App
 version: 1.0.0+1
 
 environment:
@@ -11,12 +10,7 @@ dependencies:
     sdk: flutter
   http: ^1.2.0
   shared_preferences: ^2.2.2
-  cupertino_icons: ^1.0.6
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^3.0.0
+  fluttertoast: ^8.2.4
 
 flutter:
   uses-material-design: true

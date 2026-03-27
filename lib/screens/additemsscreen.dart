@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../models/menuitem.dart';
 import '../services/apiservice.dart';
 
@@ -92,12 +93,13 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
     final ok = await ApiService.addBatchToSession(widget.bookingId, items);
     setState(() => _sending = false);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(ok ? 'Sent to kitchen! 🍳' : 'Failed. Try again.'),
+    Fluttertoast.showToast(
+      msg: ok ? 'Sent to kitchen! 🍳' : 'Failed. Try again.',
       backgroundColor: ok ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ));
+      textColor: Colors.white,
+      gravity: ToastGravity.BOTTOM,
+      toastLength: Toast.LENGTH_SHORT,
+    );
     if (ok) Navigator.pop(context);
   }
 
@@ -149,7 +151,8 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
                         color: _blue,
                         letterSpacing: 0.5)),
               ])),
-          const Icon(Icons.more_vert_rounded, color: _dark),
+          const Icon(Icons.more_vert_rounded,
+              color: Colors.transparent), // hidden
         ]),
       );
 

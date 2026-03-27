@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/loginscreen.dart';
+import 'screens/tablesscreen.dart';
+import 'services/apiservice.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const SavoryaApp());
+  // Check if already logged in
+  final token = await ApiService.getToken();
+  final rId = await ApiService.getRestaurantId();
+  runApp(SavoryaApp(isLoggedIn: token != null && rId != null));
 }
 
 class SavoryaApp extends StatelessWidget {
-  const SavoryaApp({super.key});
+  final bool isLoggedIn;
+  const SavoryaApp({super.key, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +26,7 @@ class SavoryaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
         useMaterial3: true,
       ),
-      home: const LoginScreen(),
+      home: isLoggedIn ? const TablesScreen() : const LoginScreen(),
     );
   }
 }

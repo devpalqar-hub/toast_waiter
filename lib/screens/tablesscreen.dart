@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../models/tablemodel.dart';
 import '../services/apiservice.dart';
 import '../widgets/tablecard.dart';
@@ -7,7 +8,6 @@ import 'orderscreen.dart';
 
 class TablesScreen extends StatefulWidget {
   const TablesScreen({super.key});
-
   @override
   State<TablesScreen> createState() => _TablesScreenState();
 }
@@ -17,13 +17,20 @@ class _TablesScreenState extends State<TablesScreen> {
   String _filter = 'all';
   bool _loading = true;
   String? _error;
+  String _restaurantName = 'Restaurant';
 
   static const _blue = Color(0xFF2563EB);
 
   @override
   void initState() {
     super.initState();
+    _loadRestaurantName();
     _load();
+  }
+
+  Future<void> _loadRestaurantName() async {
+    final name = await ApiService.getRestaurantName();
+    if (mounted) setState(() => _restaurantName = name);
   }
 
   Future<void> _load() async {
@@ -31,18 +38,14 @@ class _TablesScreenState extends State<TablesScreen> {
       _loading = true;
       _error = null;
     });
-
     final res = await ApiService.getTables();
-
     if (!mounted) return;
-
     if (res.error == 'Session expired. Please log in again.') {
       await ApiService.clearToken();
       Navigator.pushReplacement(
           context, MaterialPageRoute(builder: (_) => const LoginScreen()));
       return;
     }
-
     setState(() {
       _tables = res.data ?? [];
       _error = res.error;
@@ -61,8 +64,6 @@ class _TablesScreenState extends State<TablesScreen> {
     }
   }
 
-  int get _availableCount => _tables.where((t) => t.isAvailable).length;
-  int get _occupiedCount => _tables.where((t) => t.isOccupied).length;
 
   @override
   Widget build(BuildContext context) {
@@ -88,28 +89,27 @@ class _TablesScreenState extends State<TablesScreen> {
         child: Row(children: [
           Expanded(
               child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('The Bistro',
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(_restaurantName,
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF111827),
+                        letterSpacing: -0.3)),
+                Text(
+                  _loading
+                      ? 'Loading tables…'
+                      : _error != null
+                          ? _error!
+                          : '${_tables.length} tables  ·  $_availableCount available',
                   style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
-                      letterSpacing: -0.3)),
-              Text(
-                _loading
-                    ? 'Loading tables…'
-                    : _error != null
-                        ? _error!
-                        : '${_tables.length} tables  ·  $_availableCount available',
-                style: TextStyle(
-                    fontSize: 13,
-                    color: _error != null
-                        ? const Color(0xFFEF4444)
-                        : const Color(0xFF6B7280)),
-              ),
-            ],
-          )),
+                      fontSize: 13,
+                      color: _error != null
+                          ? const Color(0xFFEF4444)
+                          : const Color(0xFF6B7280)),
+                ),
+              ])),
           GestureDetector(
             onTap: _confirmLogout,
             child: Container(
@@ -176,12 +176,14 @@ class _TablesScreenState extends State<TablesScreen> {
       }).toList()),
     );
   }
+  int get _availableCount => _tables.where((t) => t.isAvailable).length;
+
+  int get _occupiedCount => _tables.where((t) => t.isOccupied).length;
 
   Widget _buildBody() {
-    if (_loading) {
+    if (_loading)
       return const Center(child: CircularProgressIndicator(color: _blue));
-    }
-    if (_error != null) {
+    if (_error != null)
       return Center(
           child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -193,16 +195,14 @@ class _TablesScreenState extends State<TablesScreen> {
               style: const TextStyle(color: Color(0xFF6B7280), fontSize: 15)),
           const SizedBox(height: 20),
           ElevatedButton.icon(
-            onPressed: _load,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Retry'),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: _blue, foregroundColor: Colors.white),
-          ),
+              onPressed: _load,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: _blue, foregroundColor: Colors.white)),
         ],
       ));
-    }
-    if (_filtered.isEmpty) {
+    if (_filtered.isEmpty)
       return Center(
           child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -214,7 +214,6 @@ class _TablesScreenState extends State<TablesScreen> {
               style: TextStyle(color: Colors.grey.shade500, fontSize: 15)),
         ],
       ));
-    }
     return RefreshIndicator(
       onRefresh: _load,
       color: _blue,
@@ -226,9 +225,10 @@ class _TablesScreenState extends State<TablesScreen> {
         itemBuilder: (_, i) => TableCard(
           table: _filtered[i],
           onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => OrderScreen(table: _filtered[i])),
-          ).then((_) => _load()),
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => OrderScreen(table: _filtered[i])))
+              .then((_) => _load()),
         ),
       ),
     );
@@ -250,9 +250,17 @@ class _TablesScreenState extends State<TablesScreen> {
             onPressed: () async {
               Navigator.pop(context);
               await ApiService.clearToken();
+              Fluttertoast.showToast(
+                msg: 'Logged out successfully',
+                backgroundColor: Colors.black87,
+                textColor: Colors.white,
+                gravity: ToastGravity.BOTTOM,
+              );
               if (mounted) {
-                Navigator.pushReplacement(context,
-                    MaterialPageRoute(builder: (_) => const LoginScreen()));
+                Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false);
               }
             },
             style: ElevatedButton.styleFrom(

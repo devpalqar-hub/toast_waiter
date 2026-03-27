@@ -26,32 +26,45 @@ class ApiService {
 
   static Future<String?> getToken() async {
     if (_token != null) return _token;
-    _token =
-        (await SharedPreferences.getInstance()).getString(endPoint.tokenKey);
+    _token = (await SharedPreferences.getInstance()).getString(C.tokenKey);
     return _token;
   }
 
   static Future<String?> getRestaurantId() async {
     if (_restaurantId != null) return _restaurantId;
-    _restaurantId = (await SharedPreferences.getInstance())
-        .getString(endPoint.restaurantKey);
+    _restaurantId =
+        (await SharedPreferences.getInstance()).getString(C.restaurantKey);
     return _restaurantId;
   }
 
-  static Future<void> _saveSession(String token, String rId) async {
+  static String? _restaurantName;
+
+  static Future<String> getRestaurantName() async {
+    if (_restaurantName != null) return _restaurantName!;
+    _restaurantName =
+        (await SharedPreferences.getInstance()).getString(C.restaurantNameKey);
+    return _restaurantName ?? 'Restaurant';
+  }
+
+  static Future<void> _saveSession(String token, String rId,
+      {String? name}) async {
     _token = token;
     _restaurantId = rId;
+    _restaurantName = name;
     final p = await SharedPreferences.getInstance();
-    await p.setString(endPoint.tokenKey, token);
-    await p.setString(endPoint.restaurantKey, rId);
+    await p.setString(C.tokenKey, token);
+    await p.setString(C.restaurantKey, rId);
+    if (name != null) await p.setString(C.restaurantNameKey, name);
   }
 
   static Future<void> clearToken() async {
     _token = null;
     _restaurantId = null;
+    _restaurantName = null;
     final p = await SharedPreferences.getInstance();
-    await p.remove(endPoint.tokenKey);
-    await p.remove(endPoint.restaurantKey);
+    await p.remove(C.tokenKey);
+    await p.remove(C.restaurantKey);
+    await p.remove(C.restaurantNameKey);
   }
 
   static const Map<String, String> _pub = {
@@ -93,7 +106,7 @@ class ApiService {
   static Future<ApiResponse<String>> sendOtp(String email) async {
     try {
       final r = await http
-          .post(Uri.parse(endPoint.sendOtp),
+          .post(Uri.parse(C.sendOtp),
               headers: _pub, body: jsonEncode({'email': email}))
           .timeout(_timeout);
       if (_ok(r.statusCode)) return ApiResponse.success('OTP sent');
@@ -108,7 +121,7 @@ class ApiService {
   static Future<ApiResponse<String>> verifyOtp(String email, String otp) async {
     try {
       final r = await http
-          .post(Uri.parse(endPoint.verifyOtp),
+          .post(Uri.parse(C.verifyOtp),
               headers: _pub, body: jsonEncode({'email': email, 'otp': otp}))
           .timeout(_timeout);
 
@@ -135,9 +148,11 @@ class ApiService {
       final rId = (user?['restaurantId'] ??
               (restRaw is Map ? (restRaw as Map)['id'] : null))
           ?.toString();
+      final restaurantName =
+          restRaw is Map ? (restRaw as Map)['name']?.toString() : null;
 
       if (token != null && token.isNotEmpty && rId != null && rId.isNotEmpty) {
-        await _saveSession(token, rId);
+        await _saveSession(token, rId, name: restaurantName);
         return ApiResponse.success('ok');
       }
       return ApiResponse.failure('Missing token or restaurant ID');
@@ -148,6 +163,7 @@ class ApiService {
 
   // ════════════════════════════════════════════════════════════════════════
   // TABLES
+  // Bug fix #1: table status comes from API — only show occupied if API says so
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<ApiResponse<List<TableModel>>> getTables() async {
@@ -155,7 +171,7 @@ class ApiService {
     if (rId == null) return ApiResponse.failure('Not logged in.');
     try {
       final r = await http
-          .get(Uri.parse(endPoint.tables(rId)), headers: await _auth())
+          .get(Uri.parse(C.tables(rId)), headers: await _auth())
           .timeout(_timeout);
       if (r.statusCode == 401)
         return ApiResponse.failure('Session expired. Please log in again.');
@@ -174,7 +190,6 @@ class ApiService {
 
   // ════════════════════════════════════════════════════════════════════════
   // SESSIONS
-  // GET /api/v1/orders/restaurants/{rId}/sessions?tableId=x
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<ApiResponse<List<SessionModel>>> getSessions(
@@ -182,8 +197,7 @@ class ApiService {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
     try {
-      final url =
-          '${endPoint.sessions(rId)}?tableId=$tableId&limit=50&status=OPEN';
+      final url = '${C.sessions(rId)}?tableId=$tableId&status=OPEN&limit=50';
       debugPrint('getSessions: $url');
       final r = await http
           .get(Uri.parse(url), headers: await _auth())
@@ -195,6 +209,7 @@ class ApiService {
         final sessions = _list(_json(r))
             .whereType<Map<String, dynamic>>()
             .map(SessionModel.fromJson)
+            .where((s) => s.isOpen) // extra safety filter
             .toList();
         return ApiResponse.success(sessions);
       }
@@ -204,19 +219,14 @@ class ApiService {
     }
   }
 
-  // GET /api/v1/orders/restaurants/{rId}/sessions/{sessionId}
   static Future<ApiResponse<OrderModel>> getSessionDetail(
       String sessionId) async {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
     try {
-      final url = endPoint.session(rId, sessionId);
-      debugPrint('getSessionDetail: $url');
       final r = await http
-          .get(Uri.parse(url), headers: await _auth())
+          .get(Uri.parse(C.session(rId, sessionId)), headers: await _auth())
           .timeout(_timeout);
-      debugPrint(
-          'getSessionDetail ${r.statusCode}: ${r.body.substring(0, r.body.length.clamp(0, 200))}');
       if (r.statusCode == 401)
         return ApiResponse.failure('Session expired. Please log in again.');
       if (_ok(r.statusCode)) {
@@ -232,8 +242,6 @@ class ApiService {
     }
   }
 
-  // POST /api/v1/orders/restaurants/{rId}/sessions
-  // Body: { tableId, guestCount, customerName, channel }
   static Future<ApiResponse<SessionModel>> createSession({
     required String tableId,
     int guestCount = 1,
@@ -250,7 +258,7 @@ class ApiService {
           'customerName': customerName,
       };
       final r = await http
-          .post(Uri.parse(endPoint.sessions(rId)),
+          .post(Uri.parse(C.sessions(rId)),
               headers: await _auth(), body: jsonEncode(body))
           .timeout(_timeout);
       debugPrint('createSession ${r.statusCode}: ${r.body}');
@@ -271,9 +279,7 @@ class ApiService {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // ADD ITEMS TO SESSION (new batch)
-  // POST /api/v1/orders/restaurants/{rId}/sessions/{sessionId}/batches
-  // Body: { items: [{ menuItemId, quantity, notes }] }
+  // BATCH — add items to session
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<bool> addBatchToSession(
@@ -281,10 +287,9 @@ class ApiService {
     final rId = await getRestaurantId();
     if (rId == null) return false;
     try {
-      final body = {'items': items};
       final r = await http
-          .post(Uri.parse(endPoint.batches(rId, sessionId)),
-              headers: await _auth(), body: jsonEncode(body))
+          .post(Uri.parse(C.batches(rId, sessionId)),
+              headers: await _auth(), body: jsonEncode({'items': items}))
           .timeout(_timeout);
       debugPrint('addBatch ${r.statusCode}: ${r.body}');
       return _ok(r.statusCode);
@@ -295,7 +300,7 @@ class ApiService {
 
   // ════════════════════════════════════════════════════════════════════════
   // UPDATE ITEM STATUS
-  // PATCH /api/v1/orders/restaurants/{rId}/sessions/{sId}/batches/{bId}/items/{iId}/status
+  // Bug fix #2: log full URL and response to debug failures
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<bool> updateItemStatus(
@@ -303,62 +308,53 @@ class ApiService {
     final rId = await getRestaurantId();
     if (rId == null) return false;
     try {
+      final url = C.itemStatus(rId, sessionId, batchId, itemId);
+      debugPrint('PATCH $url');
+      debugPrint('body: {"status":"$status"}');
       final r = await http
-          .patch(
-              Uri.parse(endPoint.itemStatus(rId, sessionId, batchId, itemId)),
-              headers: await _auth(),
-              body: jsonEncode({'status': status}))
+          .patch(Uri.parse(url),
+              headers: await _auth(), body: jsonEncode({'status': status}))
           .timeout(_timeout);
+      debugPrint('response: ${r.statusCode} ${r.body}');
       return _ok(r.statusCode);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('updateItemStatus error: $e');
       return false;
     }
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // MENU
-  // GET /api/v1/restaurants/{rId}/menu
+  // MENU — GET /api/v1/restaurants/{rId}/menu
   // ════════════════════════════════════════════════════════════════════════
 
   static Future<ApiResponse<List<MenuItem>>> getMenuItems() async {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
-
     final h = await _auth();
     final url =
         'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu?fetchAll=true';
-
     try {
-      debugPrint('Loading menu: $url');
       final r = await http.get(Uri.parse(url), headers: h).timeout(_timeout);
-      debugPrint('Menu status: ${r.statusCode}');
-      debugPrint(
-          'Menu body (first 600): ${r.body.substring(0, r.body.length.clamp(0, 600))}');
-
+      debugPrint('getMenuItems ${r.statusCode}');
       if (r.statusCode == 401)
         return ApiResponse.failure('Session expired. Please log in again.');
-
       if (_ok(r.statusCode)) {
         final decoded = _json(r);
-
-        // The API wraps in { data: [...] }
         List<dynamic> raw = [];
         if (decoded is Map) {
           final d = decoded['data'];
-          if (d is List) {
+          if (d is List)
             raw = d;
-          } else if (d is Map) {
-            // Sometimes nested: { data: { items: [...] } }
-            for (final k in ['items', 'menuItems', 'data', 'results']) {
+          else if (d is Map) {
+            for (final k in ['items', 'menuItems', 'results']) {
               if (d[k] is List) {
                 raw = d[k] as List;
                 break;
               }
             }
           }
-          // Also try top-level list keys
           if (raw.isEmpty) {
-            for (final k in ['items', 'menuItems', 'results', 'data']) {
+            for (final k in ['items', 'menuItems', 'results']) {
               if (decoded[k] is List) {
                 raw = decoded[k] as List;
                 break;
@@ -368,21 +364,14 @@ class ApiService {
         } else if (decoded is List) {
           raw = decoded;
         }
-
-        debugPrint('Menu items parsed: ${raw.length}');
-
+        debugPrint('menu items: ${raw.length}');
         if (raw.isNotEmpty) {
-          final items = raw
+          return ApiResponse.success(raw
               .whereType<Map<String, dynamic>>()
               .map(MenuItem.fromJson)
-              .toList();
-          return ApiResponse.success(items);
+              .toList());
         }
-
-        // 200 but empty — log the full body for debugging
-        debugPrint('FULL MENU BODY: ${r.body}');
-        return ApiResponse.failure(
-            'Menu loaded but no items found. Body: ${r.body.substring(0, r.body.length.clamp(0, 200))}');
+        return ApiResponse.failure('No menu items found');
       }
       return ApiResponse.failure('Failed to load menu (${r.statusCode})');
     } catch (e) {
