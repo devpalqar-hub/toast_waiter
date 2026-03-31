@@ -330,49 +330,41 @@ class ApiService {
   static Future<ApiResponse<List<MenuItem>>> getMenuItems() async {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
+
     final h = await _auth();
     final url =
         'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu?fetchAll=true';
+
     try {
       final r = await http.get(Uri.parse(url), headers: h).timeout(_timeout);
-      debugPrint('getMenuItems ${r.statusCode}');
-      if (r.statusCode == 401)
+      debugPrint("FULL RESPONSE: ${r.body}");
+
+      if (r.statusCode == 401) {
         return ApiResponse.failure('Session expired. Please log in again.');
+      }
+
       if (_ok(r.statusCode)) {
         final decoded = _json(r);
         List<dynamic> raw = [];
-        if (decoded is Map) {
-          final d = decoded['data'];
-          if (d is List)
-            raw = d;
-          else if (d is Map) {
-            for (final k in ['items', 'menuItems', 'results']) {
-              if (d[k] is List) {
-                raw = d[k] as List;
-                break;
-              }
-            }
-          }
-          if (raw.isEmpty) {
-            for (final k in ['items', 'menuItems', 'results']) {
-              if (decoded[k] is List) {
-                raw = decoded[k] as List;
-                break;
-              }
-            }
-          }
-        } else if (decoded is List) {
-          raw = decoded;
+
+        // ✅ CORRECT PARSING (YOUR CASE)
+        if (decoded is Map &&
+            decoded['data'] is Map &&
+            decoded['data']['data'] is List) {
+          raw = decoded['data']['data'];
         }
+
         debugPrint('menu items: ${raw.length}');
+
         if (raw.isNotEmpty) {
-          return ApiResponse.success(raw
-              .whereType<Map<String, dynamic>>()
-              .map(MenuItem.fromJson)
-              .toList());
+          return ApiResponse.success(
+            raw.map((e) => MenuItem.fromJson(e)).toList(),
+          );
         }
+
         return ApiResponse.failure('No menu items found');
       }
+
       return ApiResponse.failure('Failed to load menu (${r.statusCode})');
     } catch (e) {
       return ApiResponse.failure('Error: $e');

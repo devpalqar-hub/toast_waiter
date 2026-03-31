@@ -66,7 +66,9 @@ class _OrderScreenState extends State<OrderScreen> {
     if (_selected == null) return;
     final res = await ApiService.getSessionDetail(_selected!.id);
     if (!mounted) return;
-    setState(() => _detail = res.data);
+    if (res.data != null) {
+      setState(() => _detail = res.data);
+    }
   }
 
   Future<void> _createSession() async {
@@ -107,8 +109,20 @@ class _OrderScreenState extends State<OrderScreen> {
         _detail!.id, item.batchId, item.id, newStatus);
     if (!mounted) return;
     if (ok) {
+      setState(() {
+        final batches = _detail!.batches;
+
+        for (int i = 0; i < batches.length; i++) {
+          for (int j = 0; j < batches[i].items.length; j++) {
+            if (batches[i].items[j].id == item.id) {
+              batches[i].items[j] =
+                  batches[i].items[j].copyWith(status: newStatus);
+            }
+          }
+        }
+      });
       _toast('${item.name} → $newStatus', _green);
-      await _refreshDetail();
+      _refreshDetail();
     } else {
       _toast('Failed to update. Check connection.', Colors.red);
     }

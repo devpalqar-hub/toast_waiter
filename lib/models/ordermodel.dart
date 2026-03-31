@@ -153,6 +153,20 @@ class OrderItem {
     required this.unitPrice,
     this.imageUrl,
   });
+  OrderItem copyWith({
+    String? status,
+  }) {
+    return OrderItem(
+      id: id,
+      batchId: batchId,
+      name: name,
+      status: status ?? this.status,
+      notes: notes,
+      quantity: quantity,
+      unitPrice: unitPrice,
+      imageUrl: imageUrl,
+    );
+  }
 
   factory OrderItem.fromJson(Map<String, dynamic> j, {String batchId = ''}) {
     final menuItem = j['menuItem'] is Map ? j['menuItem'] as Map : {};
