@@ -90,28 +90,33 @@ class _OrderScreenState extends State<OrderScreen> {
     }
   }
 
- Future<void> _updateItemStatus(OrderItem item, String newStatus) async {
-    final statusToSend = newStatus.toLowerCase();
+  Future<void> _updateItemStatus(OrderItem item, String newStatus) async {
+    debugPrint('=== UPDATE STATUS ===');
+    debugPrint('sessionId: ${_detail?.id}');
+    debugPrint('batchId:   ${item.batchId}');
+    debugPrint('itemId:    ${item.id}');
+    debugPrint('status:    $newStatus');
+    debugPrint('batchId empty? ${item.batchId.isEmpty}');
 
-    print("Sending: $statusToSend");
+    if (item.batchId.isEmpty) {
+      _toast('Missing batch ID — cannot update', Colors.red);
+      return;
+    }
 
     final ok = await ApiService.updateItemStatus(
-        _selected!.id, 
-        item.batchId,
-        item.id,
-        statusToSend);
-
+        _detail!.id, item.batchId, item.id, newStatus);
     if (!mounted) return;
-
     if (ok) {
-      _toast('${item.name} → $newStatus', Colors.green);
+      _toast('${item.name} → $newStatus', _green);
       await _refreshDetail();
     } else {
-      _toast('Failed to update status', Colors.red);
+      _toast('Failed to update. Check connection.', Colors.red);
     }
   }
+
   void _showStatusPicker(OrderItem item) {
-    final allStatuses = ['PENDING', 'PREPARING', 'READY', 'SERVED'];
+    // API accepted values: PENDING, PREPARING, PREPARED, SERVED, CANCELLED
+    final allStatuses = ['PENDING', 'PREPARING', 'PREPARED', 'SERVED'];
     final currentIdx = allStatuses.indexOf(item.status);
     final available =
         allStatuses.where((s) => allStatuses.indexOf(s) > currentIdx).toList();
@@ -201,7 +206,8 @@ class _OrderScreenState extends State<OrderScreen> {
   List<Color> _statusColors(String s) {
     if (s == 'PREPARING')
       return [const Color(0xFFD97706), const Color(0xFFFEF3C7)];
-    if (s == 'READY') return [const Color(0xFF16A34A), const Color(0xFFF0FDF4)];
+    if (s == 'PREPARED')
+      return [const Color(0xFF16A34A), const Color(0xFFF0FDF4)];
     if (s == 'SERVED')
       return [const Color(0xFF2563EB), const Color(0xFFEFF6FF)];
     if (s == 'CANCELLED')
@@ -211,7 +217,7 @@ class _OrderScreenState extends State<OrderScreen> {
 
   IconData _statusIcon(String s) {
     if (s == 'PREPARING') return Icons.local_fire_department_rounded;
-    if (s == 'READY') return Icons.check_circle_rounded;
+    if (s == 'PREPARED') return Icons.check_circle_rounded;
     if (s == 'SERVED') return Icons.restaurant_rounded;
     if (s == 'CANCELLED') return Icons.cancel_rounded;
     return Icons.pending_rounded;
@@ -487,7 +493,7 @@ class _OrderScreenState extends State<OrderScreen> {
 
   Widget _buildItemRow(OrderItem item) {
     Color fg, bg;
-    if (item.status == 'READY') {
+    if (item.status == 'PREPARED') {
       fg = _green;
       bg = const Color(0xFFF0FDF4);
     } else if (item.status == 'PREPARING') {
