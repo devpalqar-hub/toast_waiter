@@ -99,10 +99,7 @@ class ApiService {
 
   static bool _ok(int c) => c >= 200 && c < 300;
 
-  // ════════════════════════════════════════════════════════════════════════
-  // AUTH
-  // ════════════════════════════════════════════════════════════════════════
-
+  
   static Future<ApiResponse<String>> sendOtp(String email) async {
     try {
       final r = await http
@@ -161,10 +158,7 @@ class ApiService {
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // TABLES
-  // Bug fix #1: table status comes from API — only show occupied if API says so
-  // ════════════════════════════════════════════════════════════════════════
+ 
 
   static Future<ApiResponse<List<TableModel>>> getTables() async {
     final rId = await getRestaurantId();
@@ -188,9 +182,25 @@ class ApiService {
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // SESSIONS
-  // ════════════════════════════════════════════════════════════════════════
+  static Future<bool> hasOpenSession(String tableId) async {
+    final rId = await getRestaurantId();
+    if (rId == null) return false;
+    try {
+      final r = await http
+          .get(
+              Uri.parse(
+                  '${C.sessions(rId)}?tableId=$tableId&status=OPEN&limit=1'),
+              headers: await _auth())
+          .timeout(const Duration(seconds: 5));
+      if (_ok(r.statusCode)) {
+        final list = _list(_json(r));
+        return list.isNotEmpty;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  
 
   static Future<ApiResponse<List<SessionModel>>> getSessions(
       String tableId) async {
@@ -209,7 +219,7 @@ class ApiService {
         final sessions = _list(_json(r))
             .whereType<Map<String, dynamic>>()
             .map(SessionModel.fromJson)
-            .where((s) => s.isOpen) // extra safety filter
+            .where((s) => s.isOpen)
             .toList();
         return ApiResponse.success(sessions);
       }
@@ -271,16 +281,20 @@ class ApiService {
           return ApiResponse.success(SessionModel.fromJson(data));
       }
       final b = _json(r);
-      return ApiResponse.failure(
-          b is Map ? b['message']?.toString() ?? 'Failed' : 'Failed');
+     
+      String errMsg = 'Failed to create session';
+      if (b is Map) {
+        errMsg = b['message']?.toString() ??
+            b['error']?.toString() ??
+            'Failed to create session';
+      }
+      return ApiResponse.failure(errMsg);
     } catch (e) {
       return ApiResponse.failure('Error: $e');
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // BATCH — add items to session
-  // ════════════════════════════════════════════════════════════════════════
+  
 
   static Future<bool> addBatchToSession(
       String sessionId, List<Map<String, dynamic>> items) async {
@@ -298,10 +312,7 @@ class ApiService {
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // UPDATE ITEM STATUS
-  // Bug fix #2: log full URL and response to debug failures
-  // ════════════════════════════════════════════════════════════════════════
+  
 
   static Future<bool> updateItemStatus(
       String sessionId, String batchId, String itemId, String status) async {
@@ -310,7 +321,6 @@ class ApiService {
     try {
       final url = C.itemStatus(rId, sessionId, batchId, itemId);
       debugPrint('PATCH $url');
-      debugPrint('body: {"status":"$status"}');
       final r = await http
           .patch(Uri.parse(url),
               headers: await _auth(), body: jsonEncode({'status': status}))
@@ -323,51 +333,154 @@ class ApiService {
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // MENU — GET /api/v1/restaurants/{rId}/menu
-  // ════════════════════════════════════════════════════════════════════════
-
+ 
   static Future<ApiResponse<List<MenuItem>>> getMenuItems() async {
     final rId = await getRestaurantId();
     if (rId == null) return ApiResponse.failure('Not logged in.');
-
     final h = await _auth();
-    final url =
-        'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu?fetchAll=true';
 
+    
+    final urls = [
+      'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu?fetchAll=true',
+      'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu',
+      'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu-items',
+      'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/items',
+    ];
+
+    http.Response? lastResponse;
+    for (final url in urls) {
+      try {
+        debugPrint('getMenuItems trying: $url');
+        final r = await http.get(Uri.parse(url), headers: h).timeout(_timeout);
+        debugPrint(
+            'getMenuItems ${r.statusCode} — body preview: ${r.body.length > 300 ? r.body.substring(0, 300) : r.body}');
+
+        if (r.statusCode == 401) {
+          return ApiResponse.failure('Session expired. Please log in again.');
+        }
+
+        lastResponse = r;
+
+        if (_ok(r.statusCode)) {
+          final items = _extractMenuItems(r.body);
+          if (items.isNotEmpty) {
+            debugPrint('getMenuItems: found ${items.length} items from $url');
+            await _applyEffectivePrices(items, rId, h);
+            return ApiResponse.success(items);
+          }
+          debugPrint('getMenuItems: 200 but no items found, trying next URL');
+        }
+      } catch (e) {
+        debugPrint('getMenuItems error for $url: $e');
+       
+      }
+    }
+
+   
+    if (lastResponse != null) {
+      return ApiResponse.failure(
+          'Menu not available (${lastResponse.statusCode}). Please check your internet and retry.');
+    }
+    return ApiResponse.failure('Network error. Please check your connection.');
+  }
+
+  
+  static List<MenuItem> _extractMenuItems(String body) {
+    dynamic decoded;
     try {
-      final r = await http.get(Uri.parse(url), headers: h).timeout(_timeout);
-      debugPrint("FULL RESPONSE: ${r.body}");
+      decoded = jsonDecode(body);
+    } catch (_) {
+      return [];
+    }
 
-      if (r.statusCode == 401) {
-        return ApiResponse.failure('Session expired. Please log in again.');
+    
+    final raw = _findItemsList(decoded);
+    if (raw.isEmpty) return [];
+
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(MenuItem.fromJson)
+        .where((m) => m.id.isNotEmpty && m.name.isNotEmpty)
+        .toList();
+  }
+
+ 
+  static List<dynamic> _findItemsList(dynamic node, {int depth = 0}) {
+    if (depth > 5) return []; 
+
+    if (node is List && node.isNotEmpty) {
+      
+      if (node.first is Map &&
+          ((node.first as Map).containsKey('name') ||
+              (node.first as Map).containsKey('id'))) {
+        return node;
       }
+    }
 
-      if (_ok(r.statusCode)) {
-        final decoded = _json(r);
-        List<dynamic> raw = [];
-
-        // ✅ CORRECT PARSING (YOUR CASE)
-        if (decoded is Map &&
-            decoded['data'] is Map &&
-            decoded['data']['data'] is List) {
-          raw = decoded['data']['data'];
+    if (node is Map) {
+      // Try common keys first
+      const priorityKeys = [
+        'items',
+        'menuItems',
+        'data',
+        'results',
+        'records',
+        'menu',
+        'products',
+        'list',
+      ];
+      for (final k in priorityKeys) {
+        if (node.containsKey(k)) {
+          final result = _findItemsList(node[k], depth: depth + 1);
+          if (result.isNotEmpty) return result;
         }
-
-        debugPrint('menu items: ${raw.length}');
-
-        if (raw.isNotEmpty) {
-          return ApiResponse.success(
-            raw.map((e) => MenuItem.fromJson(e)).toList(),
-          );
-        }
-
-        return ApiResponse.failure('No menu items found');
       }
+      for (final v in node.values) {
+        final result = _findItemsList(v, depth: depth + 1);
+        if (result.isNotEmpty) return result;
+      }
+    }
 
-      return ApiResponse.failure('Failed to load menu (${r.statusCode})');
-    } catch (e) {
-      return ApiResponse.failure('Error: $e');
+    return [];
+  }
+
+  static Future<void> _applyEffectivePrices(
+      List<MenuItem> items, String rId, Map<String, String> h) async {
+    const batchSize = 5;
+    for (int i = 0; i < items.length; i += batchSize) {
+      final batch = items.skip(i).take(batchSize).toList();
+      await Future.wait(batch.map((item) async {
+        try {
+          final url =
+              'https://api.pos.palqar.cloud/api/v1/restaurants/$rId/menu/${item.id}/price-rules/effective-price';
+          final r = await http
+              .get(Uri.parse(url), headers: h)
+              .timeout(const Duration(seconds: 5));
+          if (_ok(r.statusCode)) {
+            final body = _json(r);
+            final ep = body is Map
+                ? (body['data']?['effectivePrice'] ??
+                    body['effectivePrice'] ??
+                    body['data']?['price'] ??
+                    body['price'])
+                : null;
+            if (ep != null) {
+              final price = double.tryParse(ep.toString());
+              if (price != null && price > 0) {
+                items[items.indexOf(item)] = MenuItem(
+                  id: item.id,
+                  name: item.name,
+                  category: item.category,
+                  price: item.price,
+                  effectivePrice: price,
+                  description: item.description,
+                  imageUrl: item.imageUrl,
+                );
+              }
+            }
+          }
+        } catch (_) {}
+      }));
     }
   }
 }

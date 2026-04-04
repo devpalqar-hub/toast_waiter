@@ -1,9 +1,10 @@
 class TableModel {
   final String id;
-  final String name; // just the number/label e.g. "1", "2", "A1"
+  final String name; 
   final String status;
   final int seats;
   final List<String> items;
+  final bool isActive; 
 
   TableModel({
     required this.id,
@@ -11,6 +12,7 @@ class TableModel {
     required this.status,
     required this.seats,
     required this.items,
+    this.isActive = true, 
   });
 
   factory TableModel.fromJson(Map<String, dynamic> j) {
@@ -33,18 +35,18 @@ class TableModel {
           .toList();
     }
 
-    // Get raw name from any field the API might use
+  
     String rawName =
         (j['name'] ?? j['tableNumber'] ?? j['number'] ?? j['label'] ?? '')
             .toString()
             .trim();
-
-    // Remove leading "Table " or "table " prefix if present
-    // so "Table 1" becomes "1", "Table A" becomes "A"
     if (rawName.toLowerCase().startsWith('table ')) {
       rawName = rawName.substring(6).trim();
+    } else if (rawName.toLowerCase().startsWith('table')) {
+      rawName = rawName.substring(5).trim();
     }
     if (rawName.isEmpty) rawName = '?';
+    final isActive = j['isActive'] == null ? true : j['isActive'] == true;
 
     return TableModel(
       id: (j['id'] ?? j['_id'] ?? '').toString(),
@@ -54,6 +56,7 @@ class TableModel {
               .toString()) ??
           2,
       items: items,
+      isActive: isActive,
     );
   }
 

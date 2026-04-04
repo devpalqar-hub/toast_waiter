@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../models/tablemodel.dart';
@@ -18,6 +19,7 @@ class _OrderScreenState extends State<OrderScreen> {
   OrderModel? _detail;
   bool _loadingSessions = true;
   bool _loadingDetail = false;
+  Timer? _refreshTimer;
 
   static const _blue = Color(0xFF2563EB);
   static const _dark = Color(0xFF111827);
@@ -28,6 +30,15 @@ class _OrderScreenState extends State<OrderScreen> {
   void initState() {
     super.initState();
     _loadSessions();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_selected != null && mounted) _refreshDetail();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadSessions() async {
@@ -61,17 +72,22 @@ class _OrderScreenState extends State<OrderScreen> {
     });
   }
 
-  // Only refresh detail — not the whole sessions list
   Future<void> _refreshDetail() async {
     if (_selected == null) return;
     final res = await ApiService.getSessionDetail(_selected!.id);
     if (!mounted) return;
-    if (res.data != null) {
-      setState(() => _detail = res.data);
-    }
+    setState(() => _detail = res.data);
   }
 
   Future<void> _createSession() async {
+    if (!widget.table.isActive) {
+      _toast(
+        'Table ${widget.table.name} is currently inactive.\nPlease activate it in the admin panel first.',
+        Colors.red,
+      );
+      return;
+    }
+
     final count = await showDialog<int>(
       context: context,
       builder: (_) => _NewSessionDialog(tableName: widget.table.name),
@@ -88,18 +104,17 @@ class _OrderScreenState extends State<OrderScreen> {
       if (newS.isNotEmpty) _selectSession(newS.first);
     } else {
       setState(() => _loadingSessions = false);
-      _toast(res.error ?? 'Failed to create session', Colors.red);
+      // ── FIX: Clean up error message — remove redundant "Table" prefix ──
+      String errMsg = res.error ?? 'Failed to create session';
+      // API sometimes returns "Table <name> is inactive" — just show it cleanly
+      errMsg = errMsg
+          .replaceAll('Table Table', 'Table')
+          .replaceAll('table Table', 'Table');
+      _toast(errMsg, Colors.red);
     }
   }
 
   Future<void> _updateItemStatus(OrderItem item, String newStatus) async {
-    debugPrint('=== UPDATE STATUS ===');
-    debugPrint('sessionId: ${_detail?.id}');
-    debugPrint('batchId:   ${item.batchId}');
-    debugPrint('itemId:    ${item.id}');
-    debugPrint('status:    $newStatus');
-    debugPrint('batchId empty? ${item.batchId.isEmpty}');
-
     if (item.batchId.isEmpty) {
       _toast('Missing batch ID — cannot update', Colors.red);
       return;
@@ -109,27 +124,14 @@ class _OrderScreenState extends State<OrderScreen> {
         _detail!.id, item.batchId, item.id, newStatus);
     if (!mounted) return;
     if (ok) {
-      setState(() {
-        final batches = _detail!.batches;
-
-        for (int i = 0; i < batches.length; i++) {
-          for (int j = 0; j < batches[i].items.length; j++) {
-            if (batches[i].items[j].id == item.id) {
-              batches[i].items[j] =
-                  batches[i].items[j].copyWith(status: newStatus);
-            }
-          }
-        }
-      });
       _toast('${item.name} → $newStatus', _green);
-      _refreshDetail();
+      await _refreshDetail();
     } else {
       _toast('Failed to update. Check connection.', Colors.red);
     }
   }
 
   void _showStatusPicker(OrderItem item) {
-    // API accepted values: PENDING, PREPARING, PREPARED, SERVED, CANCELLED
     final allStatuses = ['PENDING', 'PREPARING', 'PREPARED', 'SERVED'];
     final currentIdx = allStatuses.indexOf(item.status);
     final available =
@@ -214,7 +216,7 @@ class _OrderScreenState extends State<OrderScreen> {
         backgroundColor: color,
         textColor: Colors.white,
         gravity: ToastGravity.BOTTOM,
-        toastLength: Toast.LENGTH_SHORT,
+        toastLength: Toast.LENGTH_LONG, // longer so user can read it
       );
 
   List<Color> _statusColors(String s) {
@@ -273,14 +275,26 @@ class _OrderScreenState extends State<OrderScreen> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                // Bug fix #4: show actual table name not hardcoded
                 Text('Table ${widget.table.name}',
                     style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
                         color: _dark)),
-                if (_selected != null)
-                  Row(children: [
+                Row(children: [
+                  if (!widget.table.isActive) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(4)),
+                      child: const Text('INACTIVE',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFDC2626))),
+                    ),
+                  ] else if (_selected != null) ...[
                     Container(
                         width: 7,
                         height: 7,
@@ -289,25 +303,42 @@ class _OrderScreenState extends State<OrderScreen> {
                             color: Color(0xFFF59E0B), shape: BoxShape.circle)),
                     const Text('In Progress',
                         style: TextStyle(fontSize: 12, color: _grey)),
-                  ]),
+                  ],
+                ]),
               ])),
-          GestureDetector(
-            onTap: _createSession,
-            child: Container(
+          // ── FIX: Only show New Session button if table is active ───────
+          if (widget.table.isActive)
+            GestureDetector(
+              onTap: _createSession,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                    color: _blue, borderRadius: BorderRadius.circular(20)),
+                child: const Row(children: [
+                  Icon(Icons.add_rounded, color: Colors.white, size: 16),
+                  SizedBox(width: 4),
+                  Text('New Session',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            )
+          else
+            // Show disabled greyed-out button
+            Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                  color: _blue, borderRadius: BorderRadius.circular(20)),
-              child: const Row(children: [
-                Icon(Icons.add_rounded, color: Colors.white, size: 16),
-                SizedBox(width: 4),
-                Text('New Session',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-              ]),
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(20)),
+              child: const Text('Inactive',
+                  style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
             ),
-          ),
         ]),
       );
 
@@ -319,7 +350,28 @@ class _OrderScreenState extends State<OrderScreen> {
               style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w700, color: _dark)),
           const SizedBox(height: 12),
-          if (_loadingSessions)
+          if (!widget.table.isActive)
+            // ── FIX: Show informative message for inactive tables ────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: const Color(0xFFDC2626).withOpacity(0.3))),
+              child: Row(children: [
+                const Icon(Icons.info_outline_rounded,
+                    color: Color(0xFFDC2626), size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                    child: Text(
+                  'This table is inactive. Please activate it in the restaurant admin panel to start a session.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFFDC2626)),
+                )),
+              ]),
+            )
+          else if (_loadingSessions)
             const SizedBox(
                 height: 100,
                 child: Center(child: CircularProgressIndicator(color: _blue)))
@@ -438,7 +490,8 @@ class _OrderScreenState extends State<OrderScreen> {
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5)),
             const SizedBox(height: 4),
-            Text('\$${_selected!.totalAmount.toStringAsFixed(2)}',
+            Text(
+                '\$${(_detail?.calculatedTotal ?? _selected!.totalAmount).toStringAsFixed(2)}',
                 style: const TextStyle(
                     fontSize: 18, fontWeight: FontWeight.w800, color: _blue)),
           ]),
@@ -446,7 +499,7 @@ class _OrderScreenState extends State<OrderScreen> {
       );
 
   Widget _buildItemsList() {
-    final items = _detail?.items ?? [];
+    final items = _detail?.batches.expand((b) => b.items).toList() ?? [];
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
@@ -454,7 +507,6 @@ class _OrderScreenState extends State<OrderScreen> {
             style: TextStyle(
                 fontSize: 15, fontWeight: FontWeight.w700, color: _dark)),
         const SizedBox(height: 10),
-        // Bug fix #6: ADD ITEMS always visible when session is selected and open
         if (_selected != null && _selected!.isOpen) _buildAddItemsButton(),
         if (items.isEmpty)
           Container(
@@ -557,7 +609,6 @@ class _OrderScreenState extends State<OrderScreen> {
                 if (item.notes.isNotEmpty)
                   Text(item.notes,
                       style: const TextStyle(fontSize: 11, color: _grey)),
-                // Bug fix #3: always show price
                 Text('\$${item.unitPrice.toStringAsFixed(2)} each',
                     style: TextStyle(
                         fontSize: 11,

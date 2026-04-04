@@ -281,8 +281,8 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
                 style: const TextStyle(fontSize: 12, color: _grey),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-          if (item.price > 0)
-            Text('\$${item.price.toStringAsFixed(2)}',
+          if (item.displayPrice > 0)
+            Text('\$${item.displayPrice.toStringAsFixed(2)}',
                 style: const TextStyle(
                     fontSize: 12, color: _blue, fontWeight: FontWeight.w600)),
         ])),
@@ -435,7 +435,7 @@ class _AddItemsScreenState extends State<AddItemsScreen> {
                                   fontWeight: FontWeight.w600,
                                   color: _dark)),
                           Text(
-                              '\$${c.item.price.toStringAsFixed(2)} × ${c.quantity}',
+                              '\$${c.item.displayPrice.toStringAsFixed(2)} × ${c.quantity}',
                               style:
                                   const TextStyle(fontSize: 12, color: _grey)),
                         ])),

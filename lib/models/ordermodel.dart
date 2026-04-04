@@ -1,4 +1,4 @@
-// ── Session (list card) ───────────────────────────────────────────────────────
+
 class SessionModel {
   final String id;
   final String sessionNumber;
@@ -44,7 +44,7 @@ class SessionModel {
   bool get isBilled => status == 'BILLED';
 }
 
-// ── Full Session Detail ────────────────────────────────────────────────────────
+
 class OrderModel {
   final String id;
   final String sessionNumber;
@@ -74,8 +74,13 @@ class OrderModel {
     required this.batches,
   });
 
-  // All items flattened across batches
-  List<OrderItem> get items => batches.expand((b) => b.items).toList();
+ 
+  double get calculatedTotal {
+    if (totalAmount > 0) return totalAmount;
+    return batches
+        .expand((b) => b.items)
+        .fold(0.0, (sum, item) => sum + (item.unitPrice * item.quantity));
+  }
 
   factory OrderModel.fromJson(Map<String, dynamic> j) {
     final table = j['table'] is Map ? j['table'] as Map : {};
@@ -100,7 +105,7 @@ class OrderModel {
   }
 }
 
-// ── Batch ──────────────────────────────────────────────────────────────────────
+
 class BatchModel {
   final String id;
   final String batchNumber;
@@ -132,7 +137,6 @@ class BatchModel {
   }
 }
 
-// ── Order Item ─────────────────────────────────────────────────────────────────
 class OrderItem {
   final String id;
   final String batchId;
@@ -153,20 +157,6 @@ class OrderItem {
     required this.unitPrice,
     this.imageUrl,
   });
-  OrderItem copyWith({
-    String? status,
-  }) {
-    return OrderItem(
-      id: id,
-      batchId: batchId,
-      name: name,
-      status: status ?? this.status,
-      notes: notes,
-      quantity: quantity,
-      unitPrice: unitPrice,
-      imageUrl: imageUrl,
-    );
-  }
 
   factory OrderItem.fromJson(Map<String, dynamic> j, {String batchId = ''}) {
     final menuItem = j['menuItem'] is Map ? j['menuItem'] as Map : {};
