@@ -230,27 +230,56 @@ class ApiService {
   }
 
   static Future<ApiResponse<OrderModel>> getSessionDetail(
-      String sessionId) async {
-    final rId = await getRestaurantId();
-    if (rId == null) return ApiResponse.failure('Not logged in.');
-    try {
-      final r = await http
-          .get(Uri.parse(C.session(rId, sessionId)), headers: await _auth())
-          .timeout(_timeout);
-      if (r.statusCode == 401)
-        return ApiResponse.failure('Session expired. Please log in again.');
-      if (_ok(r.statusCode)) {
-        final body = _json(r);
-        final data = body is Map && body['data'] is Map<String, dynamic>
-            ? body['data'] as Map<String, dynamic>
-            : (body is Map<String, dynamic> ? body : null);
-        if (data != null) return ApiResponse.success(OrderModel.fromJson(data));
-      }
-      return ApiResponse.failure('Failed to load order (${r.statusCode})');
-    } catch (e) {
-      return ApiResponse.failure('Error: $e');
+    String sessionId) async {
+  final rId = await getRestaurantId();
+  if (rId == null) return ApiResponse.failure('Not logged in.');
+
+  try {
+    final url = C.session(rId, sessionId);
+    final headers = await _auth();
+
+    /// 🔹 PRINT REQUEST
+    print('📤 GET REQUEST');
+    print('URL: $url');
+    print('Headers: $headers');
+    print('Session ID: $sessionId');
+
+    final r = await http
+        .get(Uri.parse(url), headers: headers)
+        .timeout(_timeout);
+
+    /// 🔹 PRINT RESPONSE
+    print('📥 RESPONSE');
+    print('Status Code: ${r.statusCode}');
+    print('Body: ${r.body}');
+
+    if (r.statusCode == 401) {
+      return ApiResponse.failure(
+          'Session expired. Please log in again.');
     }
+
+    if (_ok(r.statusCode)) {
+      final body = _json(r);
+
+      print('📦 PARSED JSON: $body');
+
+      final data = body is Map && body['data'] is Map<String, dynamic>
+          ? body['data'] as Map<String, dynamic>
+          : (body is Map<String, dynamic> ? body : null);
+
+      if (data != null) {
+        print('✅ FINAL DATA: $data');
+        return ApiResponse.success(OrderModel.fromJson(data));
+      }
+    }
+
+    return ApiResponse.failure(
+        'Failed to load order (${r.statusCode})');
+  } catch (e) {
+    print('❌ ERROR: $e');
+    return ApiResponse.failure('Error: $e');
   }
+}
 
   static Future<ApiResponse<SessionModel>> createSession({
     required String tableId,
