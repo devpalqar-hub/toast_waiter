@@ -310,7 +310,7 @@ class ApiService {
           .post(Uri.parse(C.sessions(rId)),
               headers: await _auth(), body: jsonEncode(body))
           .timeout(_timeout);
-      debugPrint('createSession ${r.statusCode}: ${r.body}');
+     
       if (_ok(r.statusCode)) {
         final resp = _json(r);
         final data = resp is Map && resp['data'] is Map<String, dynamic>
