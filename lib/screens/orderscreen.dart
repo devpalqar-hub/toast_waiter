@@ -2,8 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../models/tablemodel.dart';
-import '../models/ordermodel.dart';
-import '../services/apiservice.dart';
+import '../models/ordermodel.dart';import '../services/apiservice.dart';
 import 'additemsscreen.dart';
 
 class OrderScreen extends StatefulWidget {

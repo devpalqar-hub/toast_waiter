@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:savorya_staff/screens/Analytics%20Screen/analytics_screen.dart';
 import '../services/apiservice.dart';
 import 'tablesscreen.dart';
 
@@ -65,33 +66,53 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() => _error = res.error ?? 'Failed to send OTP');
     }
   }
+Future<void> _verifyOtp() async {
+  final otp = _otpCtrls.map((c) => c.text).join();
 
-  Future<void> _verifyOtp() async {
-    final otp = _otpCtrls.map((c) => c.text).join();
-    if (otp.length < 6) {
-      setState(() => _error = 'Enter the complete 6-digit code');
-      return;
-    }
-    setState(() {
-      _isLoading = true;
-      _error = '';
-    });
-
-    final res = await ApiService.verifyOtp(_emailCtrl.text.trim(), otp);
-    setState(() => _isLoading = false);
-
-    if (res.ok) {
-      if (!mounted) return;
-      Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (_) => const TablesScreen()));
-    } else {
-      setState(() => _error = res.error ?? 'Invalid OTP');
-      _shakeCtrl.forward(from: 0);
-      for (final c in _otpCtrls) c.clear();
-      _otpNodes[0].requestFocus();
-    }
+  if (otp.length < 6) {
+    setState(() => _error = 'Enter the complete 6-digit code');
+    return;
   }
 
+  setState(() {
+    _isLoading = true;
+    _error = '';
+  });
+
+  final res = await ApiService.verifyOtp(_emailCtrl.text.trim(), otp);
+
+  setState(() => _isLoading = false);
+
+  if (res.ok) {
+    final role = res.data?['role'] ??
+                 res.data?['user']?['role'];
+
+    print("🔥 ROLE DEBUG: $role");
+    print("🔥 FULL DATA: ${res.data}");
+
+    if (!mounted) return;
+
+    final roleStr = role?.toString().toUpperCase() ?? '';
+
+    if (roleStr.contains('OWNER')) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const TablesScreen()),
+      );
+    }
+  } else {
+    setState(() => _error = res.error ?? 'Invalid OTP');
+    _shakeCtrl.forward(from: 0);
+
+    for (final c in _otpCtrls) c.clear();
+    _otpNodes[0].requestFocus();
+  }
+}
   void _goBack() {
     setState(() {
       _isOtpStep = false;
